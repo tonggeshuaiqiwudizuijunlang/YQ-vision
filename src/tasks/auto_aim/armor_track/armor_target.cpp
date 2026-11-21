@@ -373,7 +373,7 @@ int ArmorTarget::update(
             r.setZero();
             auto length = cv::norm(top - bottom); //用灯条长短描述位置误差的强度，可以线性可以log
             // length = std::log1p(length * length);
-            const double sigma_px = cfg.r_sigma_px_by_length_ratio * length;
+            const double sigma_px = std::hypot(cfg.r_sigma_px_by_length_ratio * length, 3.5);
             double sigma_x = sigma_px;
             double sigma_y = sigma_px;
             if (MEASURE_NORMALIZED) {
