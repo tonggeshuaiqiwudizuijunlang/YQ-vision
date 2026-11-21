@@ -132,7 +132,7 @@ armor_detector:
 armor_tracker:
   lost_time_thres: 0.5
   lost_time_thres_outpost: 2.0
-  tracking_thres: 10
+  tracking_thres: 6
   match_gate_armor: 50.0
   match_gate_not_all_init_armor: 100.0
   qxyz_common:
@@ -157,7 +157,7 @@ armor_tracker:
   r_uv_min: 30.0
   esekf_iter_num: 5
   q_wpr: 0.1
-  armor_match_gate: 200.0
+  armor_match_gate: 450.0
   armor_match_gate_not_all_init: 1000.0
   armor_match_w_center_err: 5.0
   armor_match_w_angle_err: 10.0
