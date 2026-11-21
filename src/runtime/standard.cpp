@@ -774,16 +774,29 @@ int main(int argc, char** argv) {
     });
     s.add_rate_source<>("logger", 1.0, [&]() {
         double avg_latency_ms = log_ctx.latency_ms_total / log_ctx.detect_count;
-        AWAKENING_INFO(
-            "detect: {} track: {} found: {} solve: {} serial: {} camera: {} avg_latency: {:.3} ms",
-            log_ctx.detect_count,
-            log_ctx.track_count,
-            log_ctx.found_count,
-            log_ctx.solve_count,
-            log_ctx.serial_count,
-            log_ctx.camera_count,
-            avg_latency_ms
-        );
+        {
+            auto t_dbg = armor_target.read();
+            const auto& ts = t_dbg.get_target_state();
+            AWAKENING_INFO(
+                "detect: {} track: {} found: {} solve: {} serial: {} camera: {} avg_latency: {:.3} ms | fsm={} chk={} pos=({:.2f},{:.2f}) vel=({:.2f},{:.2f}) vyaw={:.2f} r=({:.2f},{:.2f})",
+                log_ctx.detect_count,
+                log_ctx.track_count,
+                log_ctx.found_count,
+                log_ctx.solve_count,
+                log_ctx.serial_count,
+                log_ctx.camera_count,
+                avg_latency_ms,
+                auto_aim::string_by_auto_aim_fsm(auto_aim_fsm_controller.get_state()),
+                t_dbg.check() ? 1 : 0,
+                ts.pos().x(),
+                ts.pos().y(),
+                ts.vel().x(),
+                ts.vel().y(),
+                ts.vyaw(),
+                ts.r1(),
+                ts.r2()
+            );
+        }
         if (dbg) {
             dbg->avg_latency_ms.set(avg_latency_ms);
         }
