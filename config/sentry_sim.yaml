@@ -157,7 +157,7 @@ armor_tracker:
   r_uv_min: 30.0
   esekf_iter_num: 5
   q_wpr: 0.1
-  armor_match_gate: 450.0
+  armor_match_gate: 550.0
   armor_match_gate_not_all_init: 1000.0
   armor_match_w_center_err: 5.0
   armor_match_w_angle_err: 10.0
@@ -169,11 +169,11 @@ armor_tracker:
 auto_aim_fsm:
   single_whole_up: 1.5
   single_whole_down: 1.0
-  whole_pair_up: 10.5
-  whole_pair_down: 9.5
-  pair_center_up: 16.5
-  pair_center_down: 15.0
-  transfer_time: 0.5
+  whole_pair_up: 10.0
+  whole_pair_down: 9.0
+  pair_center_up: 10.5
+  pair_center_down: 9.5
+  transfer_time: 0.25
 very_aimer:
   base_yaw_offset: -0.0
   base_pitch_offset: 0.0
