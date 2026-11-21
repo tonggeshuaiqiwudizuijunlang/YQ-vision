@@ -136,10 +136,10 @@ armor_tracker:
   match_gate_armor: 50.0
   match_gate_not_all_init_armor: 100.0
   qxyz_common:
-  - 15.0
-  - 15.0
+  - 18.0
+  - 18.0
   - 1.0
-  qyaw_common: 80.0
+  qyaw_common: 30.0
   qxyz_output:
   - 1.0
   - 1.0
