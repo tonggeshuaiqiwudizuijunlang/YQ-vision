@@ -139,7 +139,7 @@ armor_tracker:
   - 30.0
   - 30.0
   - 1.0
-  qyaw_common: 100.0
+  qyaw_common: 35.0
   qxyz_output:
   - 1.0
   - 1.0

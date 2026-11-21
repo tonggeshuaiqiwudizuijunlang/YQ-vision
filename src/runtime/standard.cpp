@@ -753,7 +753,7 @@ int main(int argc, char** argv) {
                 last_fire = Clock::now();
             }
             bool send_fire = false;
-            if (Clock::now() - last_fire < std::chrono::milliseconds(15)) {
+            if (Clock::now() - last_fire < std::chrono::milliseconds(50)) {
                 send_fire = true;
             }
             daedalus_shm_client
