@@ -139,7 +139,7 @@ armor_tracker:
   - 15.0
   - 15.0
   - 1.0
-  qyaw_common: 20.0
+  qyaw_common: 80.0
   qxyz_output:
   - 1.0
   - 1.0
@@ -156,8 +156,8 @@ armor_tracker:
   r_uv_at_1m: 70.0
   r_uv_min: 30.0
   esekf_iter_num: 5
-  q_wpr: 0.1
-  armor_match_gate: 550.0
+  q_wpr: 0.01
+  armor_match_gate: 350.0
   armor_match_gate_not_all_init: 1000.0
   armor_match_w_center_err: 5.0
   armor_match_w_angle_err: 10.0
