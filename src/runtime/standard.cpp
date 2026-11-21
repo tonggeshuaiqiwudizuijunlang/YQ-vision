@@ -752,8 +752,12 @@ int main(int argc, char** argv) {
             if (fire) {
                 last_fire = Clock::now();
             }
+            const bool is_center_lock =
+                auto_aim_fsm_controller.get_state() == auto_aim::AutoAimFsm::AIM_WHOLE_CAR_CENTER;
             bool send_fire = false;
-            if (Clock::now() - last_fire < std::chrono::milliseconds(50)) {
+            if (is_center_lock) {
+                send_fire = fire;
+            } else if (Clock::now() - last_fire < std::chrono::milliseconds(50)) {
                 send_fire = true;
             }
             daedalus_shm_client
