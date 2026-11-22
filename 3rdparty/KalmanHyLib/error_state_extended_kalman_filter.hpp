@@ -396,6 +396,16 @@ public:
                 }
 
                 int d = obs->dim();
+                // Huber IRLS robust covariance inflation against single-frame outlier observations
+                const double mahal2 = rk.dot(Rk.ldlt().solve(rk));
+                if (std::isfinite(mahal2) && mahal2 > 0.0 && d > 0) {
+                    const double r_norm = std::sqrt(mahal2 / static_cast<double>(d));
+                    constexpr double kHuber = 2.5;
+                    if (r_norm > kHuber) {
+                        const double scale = std::min(r_norm / kHuber, 16.0);
+                        Rk *= scale;
+                    }
+                }
                 H.block(offset, 0, d, N_X) = Hk;
                 residual.segment(offset, d) = rk;
                 R.block(offset, offset, d, d) = Rk;
