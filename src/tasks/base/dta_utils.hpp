@@ -721,12 +721,12 @@ public:
 class TinyMpcAxisSolver {
 public:
     struct Params {
-        float q_pos { 9e6f };
-        float q_vel { 0.0f };
+        float q_pos { 1e4f };
+        float q_vel { 1.0f };
         float r { 1.0f };
         float max_acc { 50.0f };
-        float state_min { -std::numeric_limits<float>::infinity() };
-        float state_max { std::numeric_limits<float>::infinity() };
+        float state_min { -1e4f };
+        float state_max { 1e4f };
         int horizon { 100 };
         double dt;
         int max_iter;
@@ -740,13 +740,15 @@ public:
         Eigen::VectorXd f { { 0, 0 } };
         Eigen::Matrix<double, 2, 1> Q { params_.q_pos, params_.q_vel };
         Eigen::Matrix<double, 1, 1> R { params_.r };
-        tiny_setup(&_solver, A, B, f, Q.asDiagonal(), R.asDiagonal(), 1.0, 2, 1, mpc_horizon, 0);
+        tiny_setup(&_solver, A, B, f, Q.asDiagonal(), R.asDiagonal(), 10.0, 2, 1, mpc_horizon, 0);
         Eigen::MatrixXd x_min = Eigen::MatrixXd::Constant(2, mpc_horizon, params_.state_min);
         Eigen::MatrixXd x_max = Eigen::MatrixXd::Constant(2, mpc_horizon, params_.state_max);
         Eigen::MatrixXd u_min = Eigen::MatrixXd::Constant(1, mpc_horizon - 1, -params_.max_acc);
         Eigen::MatrixXd u_max_pitch =
             Eigen::MatrixXd::Constant(1, mpc_horizon - 1, params_.max_acc);
         tiny_set_bound_constraints(_solver, x_min, x_max, u_min, u_max_pitch);
+        _solver->settings->en_state_bound = 0;
+        _solver->settings->en_input_bound = 1;
         _solver->settings->max_iter = params_.max_iter;
     }
     bool solve(
@@ -771,13 +773,35 @@ public:
             return mat;
         };
         auto traj_eigen = trajVecToEigen(ref_traj);
+        auto clear_warmstart = [&]() {
+            _solver->work->x.setZero();
+            _solver->work->u.setZero();
+            _solver->work->v.setZero();
+            _solver->work->vnew.setZero();
+            _solver->work->z.setZero();
+            _solver->work->znew.setZero();
+            _solver->work->g.setZero();
+            _solver->work->y.setZero();
+            _solver->work->p.setZero();
+            _solver->work->d.setZero();
+        };
+        if (!traj_eigen.allFinite()) {
+            clear_warmstart();
+            return false;
+        }
+        if (!_solver->work->x.allFinite() || !_solver->work->u.allFinite()
+            || !_solver->work->g.allFinite() || !_solver->work->y.allFinite()) {
+            clear_warmstart();
+        }
         Eigen::VectorXd x0(2);
         x0 << traj_eigen(0, 0), traj_eigen(1, 0);
         tiny_set_x0(_solver, x0);
         _solver->work->Xref = traj_eigen.block(0, 0, 2, mpc_horizon);
         tiny_solve(_solver);
-        if (!_solver->work->status)
+        if (!_solver->work->status || !_solver->work->x.allFinite() || !_solver->work->u.allFinite()) {
+            clear_warmstart();
             return false;
+        }
         control_traj.clear();
         control_traj.reserve(mpc_horizon);
         for (int k = 0; k < mpc_horizon; ++k) {
