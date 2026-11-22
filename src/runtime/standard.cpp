@@ -756,7 +756,7 @@ int main(int argc, char** argv) {
                 auto_aim_fsm_controller.get_state() == auto_aim::AutoAimFsm::AIM_WHOLE_CAR_CENTER;
             bool send_fire = false;
             if (is_center_lock) {
-                send_fire = (Clock::now() - last_fire < std::chrono::milliseconds(10));
+                send_fire = cmd.fire_advice;
             } else if (Clock::now() - last_fire < std::chrono::milliseconds(30)) {
                 send_fire = true;
             }
