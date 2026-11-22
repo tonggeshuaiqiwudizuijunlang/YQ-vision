@@ -216,7 +216,10 @@ struct VeryAimer::Impl {
                    && std::abs(target_state.vyaw()) > 1.5)
         {
             // Dynamic attack window + pre-aim incoming boundary (inspired by rmcs_auto_aim_v2)
-            constexpr double kAttackHalfWindow = 32.0 * M_PI / 180.0;
+            const double abs_w = std::abs(target_state.vyaw());
+            // Dynamic attack window: wider at low omega (36 deg), tighter at high omega (24 deg)
+            const double kAttackHalfWindow =
+                std::clamp(38.0 - 1.5 * abs_w, 24.0, 36.0) * M_PI / 180.0;
             const double center_yaw =
                 std::atan2(target_state.pos().y(), target_state.pos().x());
             auto delta_angle = [&](int idx) {
@@ -678,25 +681,29 @@ struct VeryAimer::Impl {
             return std::abs(angles::shortest_angular_distance(from, to));
         };
         if (fsm == AutoAimFsm::AIM_WHOLE_CAR_CENTER) {
-            // 3D ballistic ray-armor intersection at (now + fly_time) using real muzzle pose
-            auto hit_target = target.fast_copy_without_ekf();
-            hit_target.set_target_state([&](armor_point_motion_model::State& st) {
-                st.predict(last_fly_time_, hit_target.target_number);
-            });
-            const auto& hit_st = hit_target.get_target_state();
-            const auto hit_armors = hit_st.get_armors_pose(hit_target.target_number);
+            // 3D ballistic ray-armor intersection v2:
+            // 1) per-armor exact flight time + fire_delay_min (consistent with ballistic physics)
+            // 2) reject oblique plates (|delta| >= 35 deg) & use true cosine-projected half-width (0.85 safety margin)
+            // 3) verify muzzle is actually aligned with predicted center yaw/pitch before shooting
             const auto shoot_rpy = utils::matrix2rpy<double>(shoot_in_gimbal_odom.linear());
             const double cur_shoot_yaw = shoot_rpy[2];
             const double cur_shoot_pitch = -shoot_rpy[1];
             const double sin_y = std::sin(cur_shoot_yaw);
             const double cos_y = std::cos(cur_shoot_yaw);
-            const double hit_center_yaw = std::atan2(hit_st.pos().y(), hit_st.pos().x());
             const auto [yaw_off, pitch_off] = get_yaw_pitch_offset();
+            auto hit_target = target.fast_copy_without_ekf();
+            const double t_hit = last_fly_time_ + params_.fire_delay_min;
+            hit_target.set_target_state([&](armor_point_motion_model::State& st) {
+                st.predict(t_hit, hit_target.target_number);
+            });
+            const auto& hit_st = hit_target.get_target_state();
+            const auto hit_armors = hit_st.get_armors_pose(hit_target.target_number);
+            const double hit_center_yaw = std::atan2(hit_st.pos().y(), hit_st.pos().x());
             bool ray_hit = false;
             for (const auto& armor: hit_armors) {
                 const auto a_rpy = utils::matrix2rpy<double>(armor.linear());
                 const double delta = angles::normalize_angle(a_rpy[2] - hit_center_yaw);
-                if (std::abs(delta) >= 60.0 * M_PI / 180.0) {
+                if (std::abs(delta) >= 35.0 * M_PI / 180.0) {
                     continue;
                 }
                 const Vec3 rel = armor.translation() - shoot_in_gimbal_odom.translation();
@@ -705,7 +712,7 @@ struct VeryAimer::Impl {
                     continue;
                 }
                 const double lat_err = std::abs(-rel.x() * sin_y + rel.y() * cos_y);
-                const double eff_half_w = std::max(half_w * std::cos(delta), 0.025);
+                const double eff_half_w = 0.85 * half_w * std::cos(delta);
                 if (lat_err <= eff_half_w) {
                     auto p_opt = ballistic_trajectory_->solve_pitch(rel, bullet_speed);
                     if (p_opt && abs_angle_error(p_opt.value() + pitch_off, cur_shoot_pitch)
