@@ -167,6 +167,7 @@ public:
     std::optional<armor_point_motion_model::RobotStateESEKF> esekf;
     ArmorTrackerCfg cfg;
     armor_point_motion_model::Voter voter;
+    double adaptive_q_scale_ = 1.0;
     const armor_point_motion_model::State& get_target_state() const {
         return target_state;
     }

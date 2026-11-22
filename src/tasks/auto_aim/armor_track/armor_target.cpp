@@ -166,6 +166,7 @@ void ArmorTarget::reset(
     track_state.reset();
     this_id = GLOBAL_ID++;
     voter.reset(timestamp);
+    adaptive_q_scale_ = 1.0;
 }
 
 bool ArmorTarget::armor_pnp(
@@ -285,7 +286,7 @@ Eigen::Matrix<double, X_N, X_N> ArmorTarget::process_noise(double dt) const noex
         q_xyz_body = cfg.qxyz_output; // 前哨站车体系加速度方差
         q_yaw = cfg.qyaw_output; // 前哨站角加速度方差
     } else {
-        q_xyz_body = cfg.qxyz_common; // 车体系加速度方差
+        q_xyz_body = cfg.qxyz_common * adaptive_q_scale_; // 残差自适应车体系加速度方差
         q_yaw = cfg.qyaw_common; // 角加速度方差
     }
     q.setZero();
@@ -483,6 +484,38 @@ int ArmorTarget::update(
     for (const auto& [id, is_left, light]: matched_lights) {
         used_id[id] = true;
         add_uvl_obs(light.top, light.bottom, id, is_left);
+    }
+    if (!matched_armors.empty() && target_number != ArmorClass::OUTPOST) {
+        double max_norm_innov = 0.0;
+        for (auto& [id, armor]: matched_armors) {
+            const auto kp = armor.key_points.landmarks();
+            const cv::Point2f cm = 0.25f * (
+                kp[ArmorKeyPointsIndex::LEFT_TOP] + kp[ArmorKeyPointsIndex::RIGHT_TOP]
+                + kp[ArmorKeyPointsIndex::RIGHT_BOTTOM] + kp[ArmorKeyPointsIndex::LEFT_BOTTOM]
+            );
+            const auto pl = predict_light(id, true, target_state, camera_info, camera_cv_in_odom);
+            const auto pr = predict_light(id, false, target_state, camera_info, camera_cv_in_odom);
+            const cv::Point2f cp = 0.25f * (pl.first + pr.first + pr.second + pl.second);
+            const double pred_scale = std::max(
+                0.25 * (cv::norm(pl.first - pr.first) + cv::norm(pr.first - pr.second)
+                        + cv::norm(pr.second - pl.second) + cv::norm(pl.second - pl.first)),
+                10.0
+            );
+            const double norm_err = cv::norm(cp - cm) / pred_scale;
+            if (std::isfinite(norm_err) && norm_err > max_norm_innov) {
+                max_norm_innov = norm_err;
+            }
+        }
+        const double target_scale = std::clamp(
+            0.55 + std::pow(max_norm_innov / 0.13, 2.0),
+            0.55,
+            5.0
+        );
+        if (target_scale > adaptive_q_scale_) {
+            adaptive_q_scale_ = 0.5 * adaptive_q_scale_ + 0.5 * target_scale;
+        } else {
+            adaptive_q_scale_ = 0.88 * adaptive_q_scale_ + 0.12 * target_scale;
+        }
     }
     if (!obs.empty()) {
         target_state.x = esekf->update_multi(obs);
