@@ -215,46 +215,66 @@ struct VeryAimer::Impl {
                    && armors_pose.size() == 4
                    && std::abs(target_state.vyaw()) > 1.5)
         {
-            // Dynamic attack window + pre-aim incoming boundary (inspired by rmcs_auto_aim_v2)
-            const double abs_w = std::abs(target_state.vyaw());
-            // Dynamic attack window: wider at low omega (36 deg), tighter at high omega (24 deg)
-            const double kAttackHalfWindow =
-                std::clamp(38.0 - 1.5 * abs_w, 24.0, 36.0) * M_PI / 180.0;
+            // Tongji sp_vision_25 asymmetric coming/leaving armor selection + boundary pre-aim:
+            // Wide coming_angle (55 deg) grabs incoming armor early; tight leaving_angle (22 deg)
+            // abandons receding armor early -> 77 deg active attack arc (85% duty cycle) for high DPS!
+            constexpr double kComingAngle = 55.0 * M_PI / 180.0;
+            constexpr double kLeavingAngle = 22.0 * M_PI / 180.0;
             const double center_yaw =
                 std::atan2(target_state.pos().y(), target_state.pos().x());
             auto delta_angle = [&](int idx) {
                 auto rpy = utils::matrix2rpy<double>(armors_pose[idx].linear());
                 return angles::normalize_angle(rpy[2] - center_yaw);
             };
-            if (std::abs(delta_angle(selected_armor)) > kAttackHalfWindow) {
-                const double boundary_delta =
-                    (target_state.vyaw() > 0.0) ? -kAttackHalfWindow : +kAttackHalfWindow;
-                int incoming_idx = selected_armor;
-                double best_abs = std::numeric_limits<double>::infinity();
-                for (int i = 0; i < 4; ++i) {
-                    const double d = delta_angle(i);
-                    if (((boundary_delta > 0.0) == (d > 0.0)) && std::abs(d) < best_abs) {
-                        best_abs = std::abs(d);
-                        incoming_idx = i;
-                    }
+            const bool pos_spin = (target_state.vyaw() > 0.0);
+            int asym_pick = -1;
+            double best_abs = std::numeric_limits<double>::infinity();
+            for (int i = 0; i < 4; ++i) {
+                const double d = delta_angle(i);
+                const bool in_window = pos_spin
+                    ? (d >= -kComingAngle && d <= kLeavingAngle)
+                    : (d >= -kLeavingAngle && d <= kComingAngle);
+                if (in_window && std::abs(d) < best_abs) {
+                    best_abs = std::abs(d);
+                    asym_pick = i;
                 }
-                const double r = target_state.get_armor_r(incoming_idx, target.target_number);
-                const double angle = angles::normalize_angle(center_yaw + boundary_delta);
-                ISO3 boundary_pose = ISO3::Identity();
-                boundary_pose.translation() = Vec3(
-                    target_state.pos().x() - r * std::cos(angle),
-                    target_state.pos().y() - r * std::sin(angle),
-                    armors_pose[incoming_idx].translation().z()
-                );
-                boundary_pose.linear() = utils::rpy2matrix(Vec3(0.0, FIFTTEN_DEGREE_RAD, angle));
+            }
+            if (asym_pick >= 0) {
                 return get_control_point(
-                    boundary_pose,
+                    armors_pose[asym_pick],
                     shoot_in_gimbal_odom,
                     gimbal_in_gimbal_odom,
                     bullet_speed,
-                    PRE_AIM_ID
+                    asym_pick
                 );
             }
+            // Brief 13 deg dead-zone between plates: pre-aim incoming boundary
+            const double boundary_delta = pos_spin ? -kComingAngle : +kComingAngle;
+            int incoming_idx = selected_armor;
+            double best_in = std::numeric_limits<double>::infinity();
+            for (int i = 0; i < 4; ++i) {
+                const double d = delta_angle(i);
+                if (((boundary_delta > 0.0) == (d > 0.0)) && std::abs(d) < best_in) {
+                    best_in = std::abs(d);
+                    incoming_idx = i;
+                }
+            }
+            const double r = target_state.get_armor_r(incoming_idx, target.target_number);
+            const double angle = angles::normalize_angle(center_yaw + boundary_delta);
+            ISO3 boundary_pose = ISO3::Identity();
+            boundary_pose.translation() = Vec3(
+                target_state.pos().x() - r * std::cos(angle),
+                target_state.pos().y() - r * std::sin(angle),
+                armors_pose[incoming_idx].translation().z()
+            );
+            boundary_pose.linear() = utils::rpy2matrix(Vec3(0.0, FIFTTEN_DEGREE_RAD, angle));
+            return get_control_point(
+                boundary_pose,
+                shoot_in_gimbal_odom,
+                gimbal_in_gimbal_odom,
+                bullet_speed,
+                PRE_AIM_ID
+            );
         }
         return get_control_point(
             armors_pose[selected_armor],
@@ -688,30 +708,26 @@ struct VeryAimer::Impl {
             //    servo-lag-compensated muzzle (clamped within tracking error) intersects armor,
             //    recovering high DPS while preserving strict physical ray-armor collision check.
             const bool is_center = (fsm == AutoAimFsm::AIM_WHOLE_CAR_CENTER);
-            const double q_scale = target.get_adaptive_q_scale();
-            // Innovation-gated fire control: hold fire during abrupt velocity reversals
-            // when EKF reprojection innovation spikes (q_scale > 2.4) until velocity re-converges
-            if ((!is_center && target_gimbal_state.aim_id == PRE_AIM_ID) || q_scale > 2.4) {
+            if (!is_center && target_gimbal_state.aim_id == PRE_AIM_ID) {
                 cmd.fire_advice = false;
             } else {
                 const auto shoot_rpy = utils::matrix2rpy<double>(shoot_in_gimbal_odom.linear());
                 const auto [yaw_off, pitch_off] = get_yaw_pitch_offset();
                 const double cur_shoot_yaw = shoot_rpy[2] - yaw_off;
                 const double cur_shoot_pitch = -shoot_rpy[1];
-                // Compensate gimbal servo response lag only in tracking mode when muzzle trails cmd
+                // High-DPS servo lag compensation in tracking mode (suppresses only large slews > 2.2 deg)
                 double eval_yaw = cur_shoot_yaw;
                 double eval_pitch = cur_shoot_pitch;
                 if (!is_center) {
                     const double yaw_lag =
                         angles::shortest_angular_distance(shoot_rpy[2], control_yaw);
-                    // Only compensate small steady-state tracking lag (<= 1.2 deg), never large slews
-                    if (std::abs(yaw_lag) <= 1.2 * M_PI / 180.0) {
-                        eval_yaw = angles::normalize_angle(cur_shoot_yaw + 0.7 * yaw_lag);
+                    if (std::abs(yaw_lag) <= 2.2 * M_PI / 180.0) {
+                        eval_yaw = angles::normalize_angle(cur_shoot_yaw + 0.85 * yaw_lag);
                     }
                     const double pitch_lag =
                         angles::shortest_angular_distance(-shoot_rpy[1], control_pitch);
-                    if (std::abs(pitch_lag) <= 1.0 * M_PI / 180.0) {
-                        eval_pitch = angles::normalize_angle(cur_shoot_pitch + 0.7 * pitch_lag);
+                    if (std::abs(pitch_lag) <= 1.5 * M_PI / 180.0) {
+                        eval_pitch = angles::normalize_angle(cur_shoot_pitch + 0.85 * pitch_lag);
                     }
                 }
                 const double sin_y = std::sin(eval_yaw);
@@ -724,12 +740,11 @@ struct VeryAimer::Impl {
                 const auto& hit_st = hit_target.get_target_state();
                 const auto hit_armors = hit_st.get_armors_pose(hit_target.target_number);
                 const double hit_center_yaw = std::atan2(hit_st.pos().y(), hit_st.pos().x());
-                const double max_oblique = (is_center ? 35.0 : 50.0) * M_PI / 180.0;
+                // High-DPS physical ray-armor envelope (wider oblique angle + 17mm bullet radius)
+                const double max_oblique = (is_center ? 48.0 : 58.0) * M_PI / 180.0;
                 constexpr double kBulletRadius = 0.0085; // 17mm projectile physical radius
-                const double conf_scale =
-                    (q_scale > 1.2) ? (1.0 / std::sqrt(q_scale / 1.2)) : 1.0;
                 const double eff_base_w =
-                    (is_center ? (0.85 * half_w) : (half_w + kBulletRadius)) * conf_scale;
+                    is_center ? (1.05 * half_w + kBulletRadius) : (1.15 * half_w + kBulletRadius);
                 bool ray_hit = false;
                 for (const auto& armor: hit_armors) {
                     const auto a_rpy = utils::matrix2rpy<double>(armor.linear());
