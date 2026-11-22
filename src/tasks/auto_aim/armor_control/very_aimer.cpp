@@ -191,6 +191,7 @@ struct VeryAimer::Impl {
         cp.aim_id = aim_id;
         return cp;
     };
+    static constexpr int PRE_AIM_ID = -2;
     [[nodiscard]] dta_utils::ControlPoint select_and_get_control_point(
         const ArmorTarget& target,
         double bullet_speed,
@@ -208,6 +209,49 @@ struct VeryAimer::Impl {
             center_xy_dis -= target_state.get_armor_r(selected_armor, target.target_number);
             armors_pose[selected_armor].translation().x() = center_xy_dis * std::cos(center_yaw);
             armors_pose[selected_armor].translation().y() = center_xy_dis * std::sin(center_yaw);
+        } else if (fsm == AutoAimFsm::AIM_WHOLE_CAR_ARMOR
+                   && target.target_number != ArmorClass::OUTPOST
+                   && target.target_number != ArmorClass::BASE
+                   && armors_pose.size() == 4
+                   && std::abs(target_state.vyaw()) > 1.5)
+        {
+            // Dynamic attack window + pre-aim incoming boundary (inspired by rmcs_auto_aim_v2)
+            constexpr double kAttackHalfWindow = 32.0 * M_PI / 180.0;
+            const double center_yaw =
+                std::atan2(target_state.pos().y(), target_state.pos().x());
+            auto delta_angle = [&](int idx) {
+                auto rpy = utils::matrix2rpy<double>(armors_pose[idx].linear());
+                return angles::normalize_angle(rpy[2] - center_yaw);
+            };
+            if (std::abs(delta_angle(selected_armor)) > kAttackHalfWindow) {
+                const double boundary_delta =
+                    (target_state.vyaw() > 0.0) ? -kAttackHalfWindow : +kAttackHalfWindow;
+                int incoming_idx = selected_armor;
+                double best_abs = std::numeric_limits<double>::infinity();
+                for (int i = 0; i < 4; ++i) {
+                    const double d = delta_angle(i);
+                    if (((boundary_delta > 0.0) == (d > 0.0)) && std::abs(d) < best_abs) {
+                        best_abs = std::abs(d);
+                        incoming_idx = i;
+                    }
+                }
+                const double r = target_state.get_armor_r(incoming_idx, target.target_number);
+                const double angle = angles::normalize_angle(center_yaw + boundary_delta);
+                ISO3 boundary_pose = ISO3::Identity();
+                boundary_pose.translation() = Vec3(
+                    target_state.pos().x() - r * std::cos(angle),
+                    target_state.pos().y() - r * std::sin(angle),
+                    armors_pose[incoming_idx].translation().z()
+                );
+                boundary_pose.linear() = utils::rpy2matrix(Vec3(0.0, FIFTTEN_DEGREE_RAD, angle));
+                return get_control_point(
+                    boundary_pose,
+                    shoot_in_gimbal_odom,
+                    gimbal_in_gimbal_odom,
+                    bullet_speed,
+                    PRE_AIM_ID
+                );
+            }
         }
         return get_control_point(
             armors_pose[selected_armor],
@@ -634,7 +678,8 @@ struct VeryAimer::Impl {
             return std::abs(angles::shortest_angular_distance(from, to));
         };
         cmd.fire_advice =
-            abs_angle_error(angles::from_degrees(cmd.target_yaw), angles::from_degrees(cmd.yaw))
+            (target_gimbal_state.aim_id != PRE_AIM_ID)
+            && abs_angle_error(angles::from_degrees(cmd.target_yaw), angles::from_degrees(cmd.yaw))
                 < enable_diff.first
             && abs_angle_error(
                    angles::from_degrees(cmd.target_pitch),
