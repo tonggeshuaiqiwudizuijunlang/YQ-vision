@@ -769,9 +769,11 @@ struct VeryAimer::Impl {
                         }
                     }
                 }
-                // Tongji MPC lookahead pre-fire (15ms ahead): in tracking mode when muzzle is close
-                // and MPC trajectory is already converging onto target 15ms ahead, keep continuous fire
-                if (!ray_hit && !is_center && mpc_traj_) {
+                // Tongji MPC lookahead pre-fire (15ms ahead) with EKF steadiness gate:
+                // Enable lookahead pre-fire only when EKF innovation is steady (q_scale < 1.6);
+                // during abrupt strafe/dual-move reversals (q_scale >= 1.6), fall back to strict
+                // 3D ray-armor intersection to cut reversal waste shots without losing steady-state DPS.
+                if (!ray_hit && !is_center && mpc_traj_ && target.get_adaptive_q_scale() < 1.6) {
                     const double t_look = time_in_traj + 0.015;
                     const auto c_look = get_control(t_look);
                     const auto tgt_look = target_traj.Trajectory::state_at(t_look);
