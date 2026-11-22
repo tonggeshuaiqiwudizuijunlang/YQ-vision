@@ -733,7 +733,10 @@ struct VeryAimer::Impl {
                 const double sin_y = std::sin(eval_yaw);
                 const double cos_y = std::cos(eval_yaw);
                 auto hit_target = target.fast_copy_without_ekf();
-                const double t_hit = last_fly_time_ + params_.fire_delay_min;
+                // Tongji dual-speed delay: add small extra lead at high spin (|omega| > 9 rad/s)
+                const double high_speed_extra =
+                    (is_center && std::abs(target.get_target_state().vyaw()) > 9.0) ? 0.006 : 0.0;
+                const double t_hit = last_fly_time_ + params_.fire_delay_min + high_speed_extra;
                 hit_target.set_target_state([&](armor_point_motion_model::State& st) {
                     st.predict(t_hit, hit_target.target_number);
                 });
@@ -766,6 +769,26 @@ struct VeryAimer::Impl {
                         {
                             ray_hit = true;
                             break;
+                        }
+                    }
+                }
+                // Tongji MPC lookahead pre-fire (15ms ahead): in tracking mode when muzzle is close
+                // and MPC trajectory is already converging onto target 15ms ahead, keep continuous fire
+                if (!ray_hit && !is_center && mpc_traj_) {
+                    const double t_look = time_in_traj + 0.015;
+                    const auto c_look = get_control(t_look);
+                    const auto tgt_look = target_traj.Trajectory::state_at(t_look);
+                    if (tgt_look.aim_id != PRE_AIM_ID) {
+                        const double cy_l = angles::normalize_angle(c_look.yaw_state.p + limit_traj_cp0_.yaw);
+                        const double ty_l = angles::normalize_angle(tgt_look.yaw_state.p + target_traj_cp0.yaw);
+                        const double cp_l = angles::normalize_angle(c_look.pitch_state.p + limit_traj_cp0_.pitch);
+                        const double tp_l = angles::normalize_angle(tgt_look.pitch_state.p + target_traj_cp0.pitch);
+                        const double muzzle_err_y = abs_angle_error(shoot_rpy[2], control_yaw);
+                        if (muzzle_err_y < 1.8 * M_PI / 180.0
+                            && abs_angle_error(cy_l, ty_l) < enable_diff.first * 0.9
+                            && abs_angle_error(cp_l, tp_l) < enable_diff.second)
+                        {
+                            ray_hit = true;
                         }
                     }
                 }

@@ -1,3 +1,4 @@
+#include <deque>
 #pragma once
 #include "angles.h"
 #include "motion_model.hpp"
@@ -168,6 +169,23 @@ public:
     ArmorTrackerCfg cfg;
     armor_point_motion_model::Voter voter;
     double adaptive_q_scale_ = 1.0;
+    std::deque<uint8_t> nis_fail_window_;
+    bool is_diverged() const noexcept {
+        if (!is_inited) return false;
+        const double r1 = target_state.r1();
+        const double r2 = target_state.r2();
+        if (!std::isfinite(r1) || !std::isfinite(r2)
+            || r1 < 0.05 || r1 > 0.55 || r2 < 0.05 || r2 > 0.55)
+        {
+            return true;
+        }
+        if (nis_fail_window_.size() >= 20) {
+            int fails = 0;
+            for (auto f : nis_fail_window_) fails += f;
+            if (fails >= 12) return true; // >= 60% sustained innovation failure
+        }
+        return false;
+    }
     double get_adaptive_q_scale() const noexcept { return adaptive_q_scale_; }
     const armor_point_motion_model::State& get_target_state() const {
         return target_state;

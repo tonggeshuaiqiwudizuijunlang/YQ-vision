@@ -167,6 +167,7 @@ void ArmorTarget::reset(
     this_id = GLOBAL_ID++;
     voter.reset(timestamp);
     adaptive_q_scale_ = 1.0;
+    nis_fail_window_.clear();
 }
 
 bool ArmorTarget::armor_pnp(
@@ -533,6 +534,10 @@ int ArmorTarget::update(
             adaptive_q_scale_ = 0.5 * adaptive_q_scale_ + 0.5 * target_scale;
         } else {
             adaptive_q_scale_ = 0.88 * adaptive_q_scale_ + 0.12 * target_scale;
+        }
+        nis_fail_window_.push_back(max_norm_innov > 0.45 ? 1 : 0);
+        if (nis_fail_window_.size() > 20) {
+            nis_fail_window_.pop_front();
         }
         // IMM-equivalent jump-aware velocity covariance inflation (fading memory):
         // When abrupt velocity reversal triggers high reprojection innovation, immediately

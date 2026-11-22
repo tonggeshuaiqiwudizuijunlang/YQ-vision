@@ -31,6 +31,10 @@ struct ArmorTracker::Impl {
         };
         // 双缓冲，方便异常丢失恢复和操作手换目标。
         process(cur_target_idx_);
+        if (cur.track_state.tracker_state != ArmorTarget::TrackState::LOST && cur.is_diverged()) {
+            AWAKENING_WARN("ArmorTracker: target diverged (radius/NIS), resetting to LOST");
+            cur.track_state.tracker_state = ArmorTarget::TrackState::LOST;
+        }
 
         if (cur.track_state.tracker_state == ArmorTarget::TrackState::TEMP_LOST) {
             process(pre_target_idx_);
