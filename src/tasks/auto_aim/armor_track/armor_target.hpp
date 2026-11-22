@@ -182,11 +182,6 @@ public:
                 return true;
             }
         }
-        if (nis_fail_window_.size() >= 20) {
-            int fails = 0;
-            for (auto f : nis_fail_window_) fails += f;
-            if (fails >= 15) return true; // >= 75% sustained innovation failure
-        }
         return false;
     }
     double get_adaptive_q_scale() const noexcept { return adaptive_q_scale_; }

@@ -539,16 +539,29 @@ int ArmorTarget::update(
         if (nis_fail_window_.size() > 20) {
             nis_fail_window_.pop_front();
         }
-        // IMM-equivalent jump-aware velocity covariance inflation (fading memory):
-        // When abrupt velocity reversal triggers high reprojection innovation, immediately
-        // inflate planar velocity covariance before update_multi so K_v snaps vx/vy in 1-2 frames.
+        // Sightline-decomposed IMM-equivalent velocity covariance inflation:
+        // Inflate predominantly along the camera-tangential axis (well-observed by monocular UV)
+        // while keeping radial depth velocity stiff (0.12x) to prevent fake depth-velocity spikes.
         if (max_norm_innov > 0.15) {
             const double excess = max_norm_innov - 0.15;
             const double v_boost = std::clamp(8.0 * excess * excess, 0.0, 4.0);
-            esekf->inflate_diag_covariance(idx::VCX, v_boost);
-            esekf->inflate_diag_covariance(idx::VCY, v_boost);
-            esekf->inflate_diag_covariance(idx::CX, 0.02 * v_boost);
-            esekf->inflate_diag_covariance(idx::CY, 0.02 * v_boost);
+            const Vec3 rel_los = target_state.pos() - camera_cv_in_odom.translation();
+            const double d_xy = std::hypot(rel_los.x(), rel_los.y());
+            double ux = 1.0, uy = 0.0;
+            if (d_xy > 0.1) {
+                ux = rel_los.x() / d_xy;
+                uy = rel_los.y() / d_xy;
+            }
+            const double tx = -uy;
+            const double ty = ux;
+            const double v_tan = v_boost;
+            const double v_rad = 0.12 * v_boost;
+            const double add_vx = v_tan * tx * tx + v_rad * ux * ux;
+            const double add_vy = v_tan * ty * ty + v_rad * uy * uy;
+            esekf->inflate_diag_covariance(idx::VCX, add_vx);
+            esekf->inflate_diag_covariance(idx::VCY, add_vy);
+            esekf->inflate_diag_covariance(idx::CX, 0.02 * add_vx);
+            esekf->inflate_diag_covariance(idx::CY, 0.02 * add_vy);
         }
     }
     if (!obs.empty()) {
