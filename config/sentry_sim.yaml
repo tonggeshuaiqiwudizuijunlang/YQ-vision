@@ -193,7 +193,7 @@ very_aimer:
   ballistic_trajectory:
     gravity: 9.8
     resistance: 0.0
-  type: mpc
+  type: mp
 rune_detector:
   max_infer_num: 5
   backend: openvino
