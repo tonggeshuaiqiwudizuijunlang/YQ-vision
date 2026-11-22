@@ -534,6 +534,17 @@ int ArmorTarget::update(
         } else {
             adaptive_q_scale_ = 0.88 * adaptive_q_scale_ + 0.12 * target_scale;
         }
+        // IMM-equivalent jump-aware velocity covariance inflation (fading memory):
+        // When abrupt velocity reversal triggers high reprojection innovation, immediately
+        // inflate planar velocity covariance before update_multi so K_v snaps vx/vy in 1-2 frames.
+        if (max_norm_innov > 0.15) {
+            const double excess = max_norm_innov - 0.15;
+            const double v_boost = std::clamp(8.0 * excess * excess, 0.0, 4.0);
+            esekf->inflate_diag_covariance(idx::VCX, v_boost);
+            esekf->inflate_diag_covariance(idx::VCY, v_boost);
+            esekf->inflate_diag_covariance(idx::CX, 0.02 * v_boost);
+            esekf->inflate_diag_covariance(idx::CY, 0.02 * v_boost);
+        }
     }
     if (!obs.empty()) {
         target_state.x = esekf->update_multi(obs);

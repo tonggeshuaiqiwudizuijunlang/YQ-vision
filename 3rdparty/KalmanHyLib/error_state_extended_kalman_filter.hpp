@@ -446,6 +446,12 @@ public:
         iteration_num = std::max(1, n);
     }
 
+    void inflate_diag_covariance(int index, double add_var) noexcept {
+        if (index >= 0 && index < N_X && std::isfinite(add_var) && add_var > 0.0) {
+            P_delta(index, index) += add_var;
+        }
+    }
+
 private:
     PredicFunc f;
     UpdateQFunc update_Q;
