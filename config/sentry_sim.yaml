@@ -136,8 +136,8 @@ armor_tracker:
   match_gate_armor: 50.0
   match_gate_not_all_init_armor: 100.0
   qxyz_common:
-  - 18.0
-  - 18.0
+  - 30.0
+  - 30.0
   - 1.0
   qyaw_common: 30.0
   qxyz_output:
@@ -183,7 +183,7 @@ very_aimer:
   fire_delay_max: 0.0
   max_yaw_acc: 40
   max_pitch_acc: 50
-  prediction_delay: 0.0
+  prediction_delay: 0.01
   aim_center_more_prediction_time: 0.0
   shooting_range_h: 0.12
   shooting_range_w_small: 0.12
