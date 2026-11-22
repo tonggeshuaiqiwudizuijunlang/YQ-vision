@@ -688,7 +688,10 @@ struct VeryAimer::Impl {
             //    servo-lag-compensated muzzle (clamped within tracking error) intersects armor,
             //    recovering high DPS while preserving strict physical ray-armor collision check.
             const bool is_center = (fsm == AutoAimFsm::AIM_WHOLE_CAR_CENTER);
-            if (!is_center && target_gimbal_state.aim_id == PRE_AIM_ID) {
+            const double q_scale = target.get_adaptive_q_scale();
+            // Innovation-gated fire control: hold fire during abrupt velocity reversals
+            // when EKF reprojection innovation spikes (q_scale > 2.4) until velocity re-converges
+            if ((!is_center && target_gimbal_state.aim_id == PRE_AIM_ID) || q_scale > 2.4) {
                 cmd.fire_advice = false;
             } else {
                 const auto shoot_rpy = utils::matrix2rpy<double>(shoot_in_gimbal_odom.linear());
@@ -723,7 +726,10 @@ struct VeryAimer::Impl {
                 const double hit_center_yaw = std::atan2(hit_st.pos().y(), hit_st.pos().x());
                 const double max_oblique = (is_center ? 35.0 : 50.0) * M_PI / 180.0;
                 constexpr double kBulletRadius = 0.0085; // 17mm projectile physical radius
-                const double eff_base_w = is_center ? (0.85 * half_w) : (half_w + kBulletRadius);
+                const double conf_scale =
+                    (q_scale > 1.2) ? (1.0 / std::sqrt(q_scale / 1.2)) : 1.0;
+                const double eff_base_w =
+                    (is_center ? (0.85 * half_w) : (half_w + kBulletRadius)) * conf_scale;
                 bool ray_hit = false;
                 for (const auto& armor: hit_armors) {
                     const auto a_rpy = utils::matrix2rpy<double>(armor.linear());

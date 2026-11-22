@@ -168,6 +168,7 @@ public:
     ArmorTrackerCfg cfg;
     armor_point_motion_model::Voter voter;
     double adaptive_q_scale_ = 1.0;
+    double get_adaptive_q_scale() const noexcept { return adaptive_q_scale_; }
     const armor_point_motion_model::State& get_target_state() const {
         return target_state;
     }
@@ -195,6 +196,7 @@ public:
         target.track_state = this->track_state;
         target.is_inited = this->is_inited;
         target.jumped = this->jumped;
+        target.adaptive_q_scale_ = this->adaptive_q_scale_;
         target.last_match_id = this->last_match_id;
         target.outpost_has_all_and_has_set_ids = this->outpost_has_all_and_has_set_ids;
         target.this_id = this->this_id;
