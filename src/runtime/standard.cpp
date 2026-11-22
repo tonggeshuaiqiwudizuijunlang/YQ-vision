@@ -755,11 +755,7 @@ int main(int argc, char** argv) {
             const bool is_center_lock =
                 auto_aim_fsm_controller.get_state() == auto_aim::AutoAimFsm::AIM_WHOLE_CAR_CENTER;
             bool send_fire = false;
-            if (is_center_lock) {
-                send_fire = cmd.fire_advice;
-            } else if (Clock::now() - last_fire < std::chrono::milliseconds(30)) {
-                send_fire = true;
-            }
+            send_fire = cmd.fire_advice;
             daedalus_shm_client
                 ->send_gimbal_cmd(cmd.yaw, -cmd.pitch, cmd.appear ? 1.0 : -1.0, send_fire);
             // daedalus_shm_client

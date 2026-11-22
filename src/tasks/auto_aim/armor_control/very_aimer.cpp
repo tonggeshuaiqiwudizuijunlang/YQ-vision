@@ -680,59 +680,54 @@ struct VeryAimer::Impl {
         auto abs_angle_error = [](double from, double to) {
             return std::abs(angles::shortest_angular_distance(from, to));
         };
-        if (fsm == AutoAimFsm::AIM_WHOLE_CAR_CENTER) {
-            // 3D ballistic ray-armor intersection v2:
-            // 1) per-armor exact flight time + fire_delay_min (consistent with ballistic physics)
-            // 2) reject oblique plates (|delta| >= 35 deg) & use true cosine-projected half-width (0.85 safety margin)
-            // 3) verify muzzle is actually aligned with predicted center yaw/pitch before shooting
-            const auto shoot_rpy = utils::matrix2rpy<double>(shoot_in_gimbal_odom.linear());
-            const double cur_shoot_yaw = shoot_rpy[2];
-            const double cur_shoot_pitch = -shoot_rpy[1];
-            const double sin_y = std::sin(cur_shoot_yaw);
-            const double cos_y = std::cos(cur_shoot_yaw);
-            const auto [yaw_off, pitch_off] = get_yaw_pitch_offset();
-            auto hit_target = target.fast_copy_without_ekf();
-            const double t_hit = last_fly_time_ + params_.fire_delay_min;
-            hit_target.set_target_state([&](armor_point_motion_model::State& st) {
-                st.predict(t_hit, hit_target.target_number);
-            });
-            const auto& hit_st = hit_target.get_target_state();
-            const auto hit_armors = hit_st.get_armors_pose(hit_target.target_number);
-            const double hit_center_yaw = std::atan2(hit_st.pos().y(), hit_st.pos().x());
-            bool ray_hit = false;
-            for (const auto& armor: hit_armors) {
-                const auto a_rpy = utils::matrix2rpy<double>(armor.linear());
-                const double delta = angles::normalize_angle(a_rpy[2] - hit_center_yaw);
-                if (std::abs(delta) >= 35.0 * M_PI / 180.0) {
-                    continue;
-                }
-                const Vec3 rel = armor.translation() - shoot_in_gimbal_odom.translation();
-                const double forward = rel.x() * cos_y + rel.y() * sin_y;
-                if (forward <= 0.1) {
-                    continue;
-                }
-                const double lat_err = std::abs(-rel.x() * sin_y + rel.y() * cos_y);
-                const double eff_half_w = 0.85 * half_w * std::cos(delta);
-                if (lat_err <= eff_half_w) {
-                    auto p_opt = ballistic_trajectory_->solve_pitch(rel, bullet_speed);
-                    if (p_opt && abs_angle_error(p_opt.value() + pitch_off, cur_shoot_pitch)
-                            < enable_diff.second)
-                    {
-                        ray_hit = true;
-                        break;
+        {
+            // Unified 3D ballistic ray-armor intersection fire control across all FSM modes
+            const bool is_center = (fsm == AutoAimFsm::AIM_WHOLE_CAR_CENTER);
+            if (!is_center && target_gimbal_state.aim_id == PRE_AIM_ID) {
+                cmd.fire_advice = false;
+            } else {
+                const auto shoot_rpy = utils::matrix2rpy<double>(shoot_in_gimbal_odom.linear());
+                const double cur_shoot_yaw = shoot_rpy[2];
+                const double cur_shoot_pitch = -shoot_rpy[1];
+                const double sin_y = std::sin(cur_shoot_yaw);
+                const double cos_y = std::cos(cur_shoot_yaw);
+                const auto [yaw_off, pitch_off] = get_yaw_pitch_offset();
+                auto hit_target = target.fast_copy_without_ekf();
+                const double t_hit = last_fly_time_ + params_.fire_delay_min;
+                hit_target.set_target_state([&](armor_point_motion_model::State& st) {
+                    st.predict(t_hit, hit_target.target_number);
+                });
+                const auto& hit_st = hit_target.get_target_state();
+                const auto hit_armors = hit_st.get_armors_pose(hit_target.target_number);
+                const double hit_center_yaw = std::atan2(hit_st.pos().y(), hit_st.pos().x());
+                const double max_oblique = (is_center ? 35.0 : 50.0) * M_PI / 180.0;
+                const double width_margin = is_center ? 0.85 : 0.90;
+                bool ray_hit = false;
+                for (const auto& armor: hit_armors) {
+                    const auto a_rpy = utils::matrix2rpy<double>(armor.linear());
+                    const double delta = angles::normalize_angle(a_rpy[2] - hit_center_yaw);
+                    if (std::abs(delta) >= max_oblique) {
+                        continue;
+                    }
+                    const Vec3 rel = armor.translation() - shoot_in_gimbal_odom.translation();
+                    const double forward = rel.x() * cos_y + rel.y() * sin_y;
+                    if (forward <= 0.1) {
+                        continue;
+                    }
+                    const double lat_err = std::abs(-rel.x() * sin_y + rel.y() * cos_y);
+                    const double eff_half_w = width_margin * half_w * std::cos(delta);
+                    if (lat_err <= eff_half_w) {
+                        auto p_opt = ballistic_trajectory_->solve_pitch(rel, bullet_speed);
+                        if (p_opt && abs_angle_error(p_opt.value() + pitch_off, cur_shoot_pitch)
+                                < enable_diff.second)
+                        {
+                            ray_hit = true;
+                            break;
+                        }
                     }
                 }
+                cmd.fire_advice = ray_hit;
             }
-            cmd.fire_advice = ray_hit;
-        } else {
-            cmd.fire_advice =
-                (target_gimbal_state.aim_id != PRE_AIM_ID)
-                && abs_angle_error(angles::from_degrees(cmd.target_yaw), angles::from_degrees(cmd.yaw))
-                    < enable_diff.first
-                && abs_angle_error(
-                       angles::from_degrees(cmd.target_pitch),
-                       angles::from_degrees(cmd.pitch)
-                   ) < enable_diff.second;
         }
         if (fsm != AutoAimFsm::AIM_WHOLE_CAR_CENTER) {
             auto delay_fire = [&](double delay) {
