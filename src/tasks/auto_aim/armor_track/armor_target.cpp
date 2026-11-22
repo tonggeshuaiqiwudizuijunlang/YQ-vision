@@ -449,7 +449,6 @@ int ArmorTarget::update(
                     auto r_sigma = cfg.r_sigma_armor_lights_depth_diff;
                     // / std::abs(z[0] / getArmorWH(target_number).first); //实际触发到这里的情况深度差都不大，这么映射太猛了
                     r(0, 0) = r_sigma * r_sigma / 2.0;
-                    r(1, 1) = r_sigma * r_sigma / 2.0;
                     return r;
                 },
                 [](const DiffVecZ& z_pred, const DiffVecZ& z) {
@@ -599,8 +598,11 @@ std::vector<std::pair<int, Armor>> ArmorTarget::match_armor(
                 side_length_p += cv::norm(pred[k] - pred[(k + 1) % 4]);
             }
             side_length_err =
-                std::abs(side_length_p - side_length_m) / side_length_p; //边长差，表现距离缩放
-            double total_cost = cfg.armor_match_w_center_err * center_err
+                std::abs(side_length_p - side_length_m) / std::max(side_length_p, 1.0); //边长差，表现距离缩放
+            // Scale-invariant center error normalized to 40px nominal armor edge length
+            const double pred_scale = std::max(side_length_p * 0.25, 10.0);
+            const double norm_center_err = center_err * (40.0 / pred_scale);
+            double total_cost = cfg.armor_match_w_center_err * norm_center_err
                 + cfg.armor_match_w_angle_err * angle_err
                 + cfg.armor_match_w_side_length_err * side_length_err;
             if (std::isfinite(total_cost)
