@@ -1,3 +1,23 @@
+# Awakening Sentry Auto-Aim Benchmark & Algorithm Evolution Ledger
+
+## 推荐版本速查（Annotated Stable Tags）
+
+| 推荐标签 | 对应版本 | 定位 | 核心亮点（10s / 60 FPS） |
+| :--- | :--- | :--- | :--- |
+| **`stable/high-dps`** | `v32-algo-highdps-v2` | **默认推荐：全能高 DPS 巅峰** | 全 11 场景 **1,040 中（9.45 中/秒）**；5m 小陀螺 `92.5% (124/134)`、H1 `86中`、H2 `86.8%`、H4 `85.0% (102中)`、H5 英雄 `80.5% (107中)` |
+| **`stable/balanced`** | `v29-algo-tongji-highdps` | **高命中 + 高 DPS 均衡** | 5m 横移+小陀螺 `83.2% (84/101)`、5m 小陀螺 `91.9% (113/123)`、H1 `86.1% (68/79)` |
+| **`stable/high-precision`** | `v26-algo-nis-fire-gate` | **极省弹药 / 最高命中率** | 原 10 场景均分 **`85.7%`**（高难均分 `83.7%`）、5m 小陀螺 **`98.7% (77/78)`**、H3 **`73.9%`**、H5 **`88.7%`** |
+
+## 核心算法改动清单（`v1` → `v32`，共 ~350 行纯算法代码，可直接迁移实车）
+1. `3rdparty/KalmanHyLib/error_state_extended_kalman_filter.hpp`：修复 IEKF 高斯-牛顿 MAP 迭代公式与收敛早停 + Huber IRLS 鲁棒观测协方差加权 + 机动对角协方差注入接口 `inflate_diag_covariance`。
+2. `src/tasks/auto_aim/armor_track/armor_target.{hpp,cpp}`：3.5px 像素噪声底限、修复 `r(1,1)` 栈越界 UB 与 `u_r` 悬空引用捕获、远距限幅尺度无关匹配 + 不确定性自适应门限、残差自适应过程噪声 `Q`、视角倾角观测噪声 `R(δ)`、类 IMM 折返速度协方差瞬时膨胀、滑动窗口 NIS + 半径物理越界发散自愈（前哨站安全豁免）。
+3. `src/tasks/auto_aim/armor_track/armor_tracker.cpp`：接入 `cur.is_diverged()` 自动发散重置。
+4. `src/tasks/base/dta_utils.hpp`：修复 `TinyMpcAxisSolver` `NaN` 毒化 Bug + 升级同济高刚度位置权重 `Q=[9e6,0], R=[1], rho=1.0`。
+5. `src/tasks/auto_aim/armor_control/very_aimer.cpp`：修复 `fire_advice` 弧度/角度混用 Bug、同济非对称 `55°/22°` 来板/去板选板 + 来板边界预瞄、全模式统一 3D 弹道射线穿板火控（含 17mm 弹丸半径与稳态小滞后伺服补偿）、TinyMPC `15ms` 前瞻预开火。
+6. `src/runtime/standard.cpp`：移除仿真魔法锁火延时（直通 `cmd.fire_advice`）+ 1Hz EKF 状态监控日志。
+
+---
+
 # Awakening Sentry 仿真基准评测版本记录
 
 > 评测环境：Daedalus 60 FPS 平地标准靶场，蓝方目标，弹速 25.0 m/s，无空气阻力。
