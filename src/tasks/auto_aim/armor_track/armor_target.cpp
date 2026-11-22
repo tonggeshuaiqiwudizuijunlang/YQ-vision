@@ -632,15 +632,18 @@ std::vector<std::pair<int, Armor>> ArmorTarget::match_armor(
             }
             side_length_err =
                 std::abs(side_length_p - side_length_m) / std::max(side_length_p, 1.0); //边长差，表现距离缩放
-            // Scale-invariant center error normalized to 40px nominal armor edge length
+            // Scale-invariant center error (clamped at far range) + uncertainty-adaptive gate
             const double pred_scale = std::max(side_length_p * 0.25, 10.0);
-            const double norm_center_err = center_err * (40.0 / pred_scale);
+            const double scale_gain = std::clamp(40.0 / pred_scale, 0.7, 2.0);
+            const double norm_center_err = center_err * scale_gain;
             double total_cost = cfg.armor_match_w_center_err * norm_center_err
                 + cfg.armor_match_w_angle_err * angle_err
                 + cfg.armor_match_w_side_length_err * side_length_err;
-            if (std::isfinite(total_cost)
-                && total_cost
-                    < (!all_init ? cfg.armor_match_gate_not_all_init : cfg.armor_match_gate))
+            const double base_gate =
+                (!all_init ? cfg.armor_match_gate_not_all_init : cfg.armor_match_gate);
+            const double adaptive_gate =
+                base_gate * std::sqrt(std::max(adaptive_q_scale_, 1.0));
+            if (std::isfinite(total_cost) && total_cost < adaptive_gate)
             {
                 cost[j][i] = total_cost;
                 in_gate = true;
