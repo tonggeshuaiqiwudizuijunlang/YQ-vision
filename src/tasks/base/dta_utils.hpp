@@ -721,8 +721,8 @@ public:
 class TinyMpcAxisSolver {
 public:
     struct Params {
-        float q_pos { 1e4f };
-        float q_vel { 1.0f };
+        float q_pos { 9e6f };
+        float q_vel { 0.0f };
         float r { 1.0f };
         float max_acc { 50.0f };
         float state_min { -1e4f };
@@ -740,7 +740,7 @@ public:
         Eigen::VectorXd f { { 0, 0 } };
         Eigen::Matrix<double, 2, 1> Q { params_.q_pos, params_.q_vel };
         Eigen::Matrix<double, 1, 1> R { params_.r };
-        tiny_setup(&_solver, A, B, f, Q.asDiagonal(), R.asDiagonal(), 10.0, 2, 1, mpc_horizon, 0);
+        tiny_setup(&_solver, A, B, f, Q.asDiagonal(), R.asDiagonal(), 1.0, 2, 1, mpc_horizon, 0);
         Eigen::MatrixXd x_min = Eigen::MatrixXd::Constant(2, mpc_horizon, params_.state_min);
         Eigen::MatrixXd x_max = Eigen::MatrixXd::Constant(2, mpc_horizon, params_.state_max);
         Eigen::MatrixXd u_min = Eigen::MatrixXd::Constant(1, mpc_horizon - 1, -params_.max_acc);
