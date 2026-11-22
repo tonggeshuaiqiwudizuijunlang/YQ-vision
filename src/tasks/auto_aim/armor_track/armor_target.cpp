@@ -362,6 +362,8 @@ int ArmorTarget::update(
         return UVLMeasure::residual(z_pred, z);
     };
     const int armors_num = armor_num();
+    const auto pred_armors_pose = target_state.get_armors_pose(target_number);
+    const Vec3 cam_pos_odom = camera_cv_in_odom.translation();
     auto add_uvl_obs = [&](const cv::Point2f& top, const cv::Point2f& bottom, int id, bool is_left
                        ) {
         auto ctx = uvmeasure_ctx;
@@ -369,25 +371,41 @@ int ArmorTarget::update(
         ctx.is_left = is_left;
         ctx.normalized = MEASURE_NORMALIZED;
         const auto observation = get_uvl_measurement(top, bottom, camera_info);
-        const auto u_r = [&](const Eigen::Matrix<double, UVLZ_N, 1>& z) {
+        const double length_val = cv::norm(top - bottom);
+        // Viewing-angle-dependent observation noise R(delta):
+        // At oblique incidence (|delta| > 25 deg), lightbar edges suffer perspective foreshortening
+        // and occlusion distortion, so inflate R smoothly by 1/cos(delta) to downweight oblique plates.
+        double oblique_scale = 1.0;
+        if (id >= 0 && id < static_cast<int>(pred_armors_pose.size())) {
+            const auto a_rpy = utils::matrix2rpy<double>(pred_armors_pose[id].linear());
+            const Vec3 rel_cam = pred_armors_pose[id].translation() - cam_pos_odom;
+            const double view_yaw = std::atan2(rel_cam.y(), rel_cam.x());
+            const double delta = std::abs(angles::normalize_angle(a_rpy[2] - view_yaw));
+            const double cos_d = std::clamp(std::cos(delta), 0.30, 1.0);
+            constexpr double kFlatCos = 0.9063; // cos(25 deg)
+            if (cos_d < kFlatCos) {
+                oblique_scale = kFlatCos / cos_d;
+            }
+        }
+        const auto u_r = [this, length_val, oblique_scale](const Eigen::Matrix<double, UVLZ_N, 1>& z) {
             Eigen::Matrix<double, UVLZ_N, UVLZ_N> r;
             r.setZero();
-            auto length = cv::norm(top - bottom); //用灯条长短描述位置误差的强度，可以线性可以log
-            // length = std::log1p(length * length);
-            const double sigma_px = std::hypot(cfg.r_sigma_px_by_length_ratio * length, 3.5);
+            const double length = length_val;
+            const double sigma_px =
+                std::hypot(cfg.r_sigma_px_by_length_ratio * length, 3.5) * oblique_scale;
             double sigma_x = sigma_px;
             double sigma_y = sigma_px;
             if (MEASURE_NORMALIZED) {
                 sigma_x /= uvmeasure_ctx.camera_info.camera_fx(); //将像素误差转换为归一化坐标误差
                 sigma_y /= uvmeasure_ctx.camera_info.camera_fy();
             }
-            double sigma_length = cfg.r_sigma_length_by_length_ratio * length;
+            double sigma_length = cfg.r_sigma_length_by_length_ratio * length * oblique_scale;
             if (MEASURE_NORMALIZED) {
                 sigma_length /=
                     ((uvmeasure_ctx.camera_info.camera_fx() + uvmeasure_ctx.camera_info.camera_fy())
                      / 2.0);
             }
-            double sigma_angle = cfg.r_sigma_angle;
+            double sigma_angle = cfg.r_sigma_angle * oblique_scale;
             // sigma_angle *= std::cos(z(idx::UV_ANGLE)
             // ); //越接近垂直上下点的垂直灯条方向偏移越大，这个实际还是需要考虑遮挡模型
             r(idx::UV_ANGLE, idx::UV_ANGLE) = sigma_angle * sigma_angle / 2.0;
