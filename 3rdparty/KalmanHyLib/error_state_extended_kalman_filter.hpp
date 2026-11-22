@@ -188,7 +188,12 @@ public:
             const MatrixXZ PHt = P_iter * H.transpose();
             K = ldlt.solve(PHt.transpose()).transpose();
 
-            delta_iter.noalias() += K * residual;
+            const MatrixX1 delta_new = K * (residual + H * delta_iter);
+            const double step_norm = (delta_new - delta_iter).norm();
+            delta_iter = delta_new;
+            if (step_norm < 1e-5) {
+                break;
+            }
         }
 
         if (inject_state)
@@ -404,7 +409,12 @@ public:
             Eigen::MatrixXd PHt = P_iter * H.transpose();
             K = ldlt.solve(PHt.transpose()).transpose();
 
-            delta_iter.noalias() += K * residual;
+            const MatrixX1 delta_new = K * (residual + H * delta_iter);
+            const double step_norm = (delta_new - delta_iter).norm();
+            delta_iter = delta_new;
+            if (step_norm < 1e-5) {
+                break;
+            }
         }
 
         if (inject_state)
