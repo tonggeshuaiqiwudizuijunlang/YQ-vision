@@ -173,16 +173,19 @@ public:
     bool is_diverged() const noexcept {
         if (!is_inited) return false;
         const double r1 = target_state.r1();
-        const double r2 = target_state.r2();
-        if (!std::isfinite(r1) || !std::isfinite(r2)
-            || r1 < 0.05 || r1 > 0.55 || r2 < 0.05 || r2 > 0.55)
-        {
+        if (!std::isfinite(r1) || r1 < 0.05 || r1 > 0.55) {
             return true;
+        }
+        if (target_number != ArmorClass::OUTPOST) {
+            const double r2 = target_state.r2();
+            if (!std::isfinite(r2) || r2 < 0.05 || r2 > 0.55) {
+                return true;
+            }
         }
         if (nis_fail_window_.size() >= 20) {
             int fails = 0;
             for (auto f : nis_fail_window_) fails += f;
-            if (fails >= 12) return true; // >= 60% sustained innovation failure
+            if (fails >= 15) return true; // >= 75% sustained innovation failure
         }
         return false;
     }

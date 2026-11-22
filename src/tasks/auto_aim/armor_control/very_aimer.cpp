@@ -733,10 +733,7 @@ struct VeryAimer::Impl {
                 const double sin_y = std::sin(eval_yaw);
                 const double cos_y = std::cos(eval_yaw);
                 auto hit_target = target.fast_copy_without_ekf();
-                // Tongji dual-speed delay: add small extra lead at high spin (|omega| > 9 rad/s)
-                const double high_speed_extra =
-                    (is_center && std::abs(target.get_target_state().vyaw()) > 9.0) ? 0.006 : 0.0;
-                const double t_hit = last_fly_time_ + params_.fire_delay_min + high_speed_extra;
+                const double t_hit = last_fly_time_ + params_.fire_delay_min;
                 hit_target.set_target_state([&](armor_point_motion_model::State& st) {
                     st.predict(t_hit, hit_target.target_number);
                 });

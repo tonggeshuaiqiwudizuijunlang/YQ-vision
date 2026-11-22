@@ -535,7 +535,7 @@ int ArmorTarget::update(
         } else {
             adaptive_q_scale_ = 0.88 * adaptive_q_scale_ + 0.12 * target_scale;
         }
-        nis_fail_window_.push_back(max_norm_innov > 0.45 ? 1 : 0);
+        nis_fail_window_.push_back(max_norm_innov > 0.60 ? 1 : 0);
         if (nis_fail_window_.size() > 20) {
             nis_fail_window_.pop_front();
         }

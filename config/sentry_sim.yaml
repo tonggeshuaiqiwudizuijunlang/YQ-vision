@@ -169,10 +169,10 @@ armor_tracker:
 auto_aim_fsm:
   single_whole_up: 1.5
   single_whole_down: 1.0
-  whole_pair_up: 10.0
-  whole_pair_down: 9.0
-  pair_center_up: 10.5
-  pair_center_down: 9.5
+  whole_pair_up: 13.0
+  whole_pair_down: 11.5
+  pair_center_up: 13.5
+  pair_center_down: 12.0
   transfer_time: 0.25
 very_aimer:
   base_yaw_offset: -0.0
